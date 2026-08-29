@@ -32,6 +32,7 @@ float pan_max_speed = 15; //degrees/second
 float tilt_max_speed = 45; //degrees/second
 float slider_max_speed = 15; //mm/second
 long target_position[3];
+bool independent_motion = false;
 float degrees_per_picture = 0.5;
 unsigned long delay_ms_between_pictures = 1000;
 FloatCoordinate intercept;
@@ -178,13 +179,19 @@ void setStepMode(int newMode){
 
 void panJogDegrees(float jogAngle){
     target_position[0] = panDegreesToSteps(jogAngle);
-    multi_stepper.moveTo(target_position);
+
+    // Move pan independently at its own configured speed.
+    stepper_pan.moveTo(target_position[0]);
+    independent_motion = true;
 }
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void tiltJogDegrees(float jogAngle){
     target_position[1] = tiltDegreesToSteps(jogAngle);
-    multi_stepper.moveTo(target_position);
+
+    // Move tilt independently at its own configured speed.
+    stepper_tilt.moveTo(target_position[1]);
+    independent_motion = true;
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -227,7 +234,10 @@ void sliderMoveTo(float mm){
     printi(F("TARGET STEPS = "));
     printi(target_position[2], F("\n"));
 
-    multi_stepper.moveTo(target_position);
+    // Move the slider independently at its own configured speed.
+    // This prevents a long slider move from making pan and tilt crawl.
+    stepper_slider.moveTo(target_position[2]);
+    independent_motion = true;
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -300,6 +310,9 @@ void debugReport(void){
 int setTargetPositions(float panDeg, float tiltDeg){
     target_position[0] = panDegreesToSteps(panDeg);
     target_position[1] = tiltDegreesToSteps(tiltDeg);
+
+    // Coordinated move: use MultiStepper so the axes arrive together.
+    independent_motion = false;
     multi_stepper.moveTo(target_position); 
 }
 
@@ -309,6 +322,9 @@ int setTargetPositions(float panDeg, float tiltDeg, float sliderMillimetre){
     target_position[0] = panDegreesToSteps(panDeg);
     target_position[1] = tiltDegreesToSteps(tiltDeg);
     target_position[2] = sliderMillimetresToSteps(sliderMillimetre);
+
+    // Coordinated move: use MultiStepper so all axes arrive together.
+    independent_motion = false;
     multi_stepper.moveTo(target_position); 
 }
 
@@ -1132,7 +1148,26 @@ void serialData(void){
 void mainLoop(void){
     while(1){
         if(Serial.available()) serialData();
-        multi_stepper.run();
+
+        if(independent_motion){
+            // Each motor runs at its own maxSpeed().
+            // A long slider move therefore does not slow pan or tilt.
+            stepper_pan.run();
+            stepper_tilt.run();
+            stepper_slider.run();
+
+            // Automatically return to the coordinated mode once all
+            // independently commanded moves have finished.
+            if(!stepper_pan.isRunning() &&
+               !stepper_tilt.isRunning() &&
+               !stepper_slider.isRunning()){
+                independent_motion = false;
+            }
+        }
+        else{
+            // MultiStepper mode is retained for coordinated/keyframe moves.
+            multi_stepper.run();
+        }
     }
 }
 
