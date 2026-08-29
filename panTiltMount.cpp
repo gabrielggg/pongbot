@@ -3,35 +3,12 @@
 #include <AccelStepper.h> //Library to control the stepper motors http://www.airspayce.com/mikem/arduino/AccelStepper/index.html
 #include <MultiStepper.h> //Library to control multiple coordinated stepper motors http://www.airspayce.com/mikem/arduino/AccelStepper/classMultiStepper.html#details
 #include <EEPROM.h> //To be able to save values when powered off
-#include <avr/interrupt.h>
-
-
-#define MOTOR_PWM_PIN A1
-#define MOTOR_DIR_PIN A2
-
-#define MOTOR_PWM_PORT PORTC
-#define MOTOR_PWM_BIT PC1
-
-#define MOTOR_DIR_PORT PORTC
-#define MOTOR_DIR_BIT PC2
-
-#define MOTOR_PWM_COUNTS 8
-#define MOTOR_PWM_TOP 249
-
-volatile uint8_t motorPWMCount = 0;
-volatile uint8_t motorDuty = 0;
-
-volatile int motorTargetSpeed = 0;
-volatile int motorCurrentSpeed = 0;
-
-unsigned long motorRampTimer = 0;
-
-#define MOTOR_RAMP_INTERVAL 10
+#include <FastLED.h> //Controls the WS2812B Addressable status LED
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 //Global scope
-//CRGB leds[NUM_LEDS];
+CRGB leds[NUM_LEDS];
 
 AccelStepper stepper_pan = AccelStepper(1, PIN_STEP_PAN, PIN_DIRECTION_PAN);
 AccelStepper stepper_tilt = AccelStepper(1, PIN_STEP_TILT, PIN_DIRECTION_TILT);
@@ -66,181 +43,6 @@ FloatCoordinate intercept;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-/* =========================================================
-   TIMER2 INTERRUPT
-   ========================================================= */
-
-ISR(TIMER2_COMPA_vect)
-{
-    motorPWMCount++;
-
-    if(motorPWMCount >= MOTOR_PWM_COUNTS)
-        motorPWMCount = 0;
-
-
-    if(motorDuty == 0)
-    {
-        MOTOR_PWM_PORT &= ~_BV(MOTOR_PWM_BIT);
-    }
-    else if(motorDuty >= MOTOR_PWM_COUNTS)
-    {
-        MOTOR_PWM_PORT |= _BV(MOTOR_PWM_BIT);
-    }
-    else if(motorPWMCount < motorDuty)
-    {
-        MOTOR_PWM_PORT |= _BV(MOTOR_PWM_BIT);
-    }
-    else
-    {
-        MOTOR_PWM_PORT &= ~_BV(MOTOR_PWM_BIT);
-    }
-}
-
-
-/* =========================================================
-   INITIALIZE MOTOR
-   ========================================================= */
-
-void motorSetup(void)
-{
-    pinMode(MOTOR_PWM_PIN, OUTPUT);
-    pinMode(MOTOR_DIR_PIN, OUTPUT);
-
-    digitalWrite(MOTOR_PWM_PIN, LOW);
-    digitalWrite(MOTOR_DIR_PIN, LOW);
-
-    noInterrupts();
-
-    /*
-       Stop Timer2
-    */
-    TCCR2A = 0;
-    TCCR2B = 0;
-
-    TCNT2 = 0;
-
-    /*
-       CTC mode
-    */
-    TCCR2A |= _BV(WGM21);
-
-    /*
-       Compare value
-
-       16 MHz / 8 / 250 = 8 kHz
-    */
-    OCR2A = MOTOR_PWM_TOP;
-
-    /*
-       Timer2 prescaler = 8
-    */
-    TCCR2B |= _BV(CS21);
-
-    /*
-       Enable Timer2 Compare A interrupt
-    */
-    TIMSK2 |= _BV(OCIE2A);
-
-    interrupts();
-}
-
-
-/* =========================================================
-   SET MOTOR SPEED
-   ========================================================= */
-
-/*
-   speed:
-
-   -100 = full reverse
-      0 = stop
-   +100 = full forward
-*/
-void setMotorSpeed(int speed)
-{
-    speed = constrain(speed, -100, 100);
-
-    noInterrupts();
-
-    motorTargetSpeed = speed;
-
-    interrupts();
-}
-
-
-/* =========================================================
-   UPDATE MOTOR RAMP
-   ========================================================= */
-
-void updateMotor(void)
-{
-    if(millis() - motorRampTimer < MOTOR_RAMP_INTERVAL)
-        return;
-
-    motorRampTimer = millis();
-
-
-    /*
-       Move current speed toward target speed.
-    */
-
-    if(motorCurrentSpeed < motorTargetSpeed)
-    {
-        motorCurrentSpeed++;
-    }
-    else if(motorCurrentSpeed > motorTargetSpeed)
-    {
-        motorCurrentSpeed--;
-    }
-
-
-    /*
-       Set direction.
-
-       IMPORTANT:
-       When reversing, motorCurrentSpeed naturally
-       passes through zero before changing direction.
-    */
-
-    if(motorCurrentSpeed >= 0)
-    {
-        MOTOR_DIR_PORT &= ~_BV(MOTOR_DIR_BIT);
-    }
-    else
-    {
-        MOTOR_DIR_PORT |= _BV(MOTOR_DIR_BIT);
-    }
-
-
-    /*
-       Convert 0-100% speed into
-       0-8 PWM duty counts.
-    */
-
-    int absoluteSpeed = abs(motorCurrentSpeed);
-
-    byte newDuty =
-        (absoluteSpeed * MOTOR_PWM_COUNTS) / 100;
-
-
-    noInterrupts();
-
-    motorDuty = newDuty;
-
-    interrupts();
-}
-
-
-/* =========================================================
-   OPTIONAL MOTOR STOP
-   ========================================================= */
-
-void stopMotor(void)
-{
-    setMotorSpeed(0);
-}
-
-
 void initPanTilt(void){
     Serial.begin(BAUD_RATE);
     pinMode(PIN_MS1, OUTPUT);
@@ -258,9 +60,9 @@ void initPanTilt(void){
     pinMode(PIN_SLIDER_HALL, INPUT_PULLUP);
     pinMode(PIN_SHUTTER_TRIGGER, OUTPUT);
     digitalWrite(PIN_SHUTTER_TRIGGER, LOW);
-    //FastLED.addLeds<LED_TYPE, PIN_LED_DATA, COLOR_ORDER>(leds, NUM_LEDS);
-    //FastLED.setBrightness(BRIGHTNESS);
-    //LEDS.showColor(CHSV(160, 255, 255)); //Set led to blue
+    FastLED.addLeds<LED_TYPE, PIN_LED_DATA, COLOR_ORDER>(leds, NUM_LEDS);
+    FastLED.setBrightness(BRIGHTNESS);
+    LEDS.showColor(CHSV(160, 255, 255)); //Set led to blue
     setEEPROMVariables();
     setStepMode(step_mode); //steping mode
     stepper_pan.setMaxSpeed(panDegreesToSteps(pan_max_speed));
@@ -287,7 +89,6 @@ void initPanTilt(void){
         }
     }
     ledBatteryLevel(getBatteryPercentage()); 
-    motorSetup();
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -375,10 +176,6 @@ void setStepMode(int newMode){
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-void dcmotor1speed(float speed){
-    setMotorSpeed(speed);
-}
-
 
 void panJogDegrees(float jogAngle){
     target_position[0] = panDegreesToSteps(jogAngle);
@@ -417,20 +214,8 @@ float sliderStepsToMillimetres(long steps){
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-//void sliderMoveTo(float mm){
-//    target_position[2] = sliderMillimetresToSteps(mm);
-//    multi_stepper.moveTo(target_position);
-//}
-
 void sliderMoveTo(float mm){
-    printi(F("SLIDER COMMAND = "));
-    printi(mm, 3, F(" mm\n"));
-
     target_position[2] = sliderMillimetresToSteps(mm);
-
-    printi(F("TARGET STEPS = "));
-    printi(target_position[2], F("\n"));
-
     multi_stepper.moveTo(target_position);
 }
 
@@ -888,14 +673,16 @@ void toggleAutoHoming(void){
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void triggerCameraShutter(void){
-    //
+    digitalWrite(PIN_SHUTTER_TRIGGER, HIGH);
+    delay(SHUTTER_DELAY);
+    digitalWrite(PIN_SHUTTER_TRIGGER, LOW);
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void ledBatteryLevel(float batteryPercentage){
     byte hue = mapNumber(batteryPercentage, 0, 100, 0, 96);
-    //LEDS.showColor(CHSV(hue , 255, 255));
+    LEDS.showColor(CHSV(hue , 255, 255));
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -919,9 +706,9 @@ void panoramiclapseInterpolation(float panStartAngle, float tiltStartAngle, floa
         setTargetPositions(panStartAngle + (panInc * i), tiltStartAngle + (tiltInc * i), sliderStartPos + (sliderInc * i));
         multi_stepper.runSpeedToPosition();//blocking move to the next position
         delay(msDelay);
-        //LEDS.showColor(CHSV(160 , 255, 255)); //blue
+        LEDS.showColor(CHSV(160 , 255, 255)); //blue
         triggerCameraShutter();//capture the picture
-        //LEDS.showColor(CHSV(160 , 255, 0)); //off
+        LEDS.showColor(CHSV(160 , 255, 0)); //off
     }
 }
 
@@ -965,9 +752,9 @@ void timelapse(unsigned int numberOfPictures, unsigned long msDelay){
         setTargetPositions(panStepsToDegrees(stepper_pan.currentPosition()) + (panInc * i), tiltStepsToDegrees(stepper_tilt.currentPosition()) + (tiltInc * i), sliderStepsToMillimetres(stepper_slider.currentPosition()) + (sliderInc * i));
         multi_stepper.runSpeedToPosition();//blocking move to the next position
         delay(msDelay);
-        //LEDS.showColor(CHSV(160 , 255, 255)); //blue
+        LEDS.showColor(CHSV(160 , 255, 255)); //blue
         triggerCameraShutter();//capture the picture
-        //LEDS.showColor(CHSV(160 , 255, 0)); //off
+        LEDS.showColor(CHSV(160 , 255, 0)); //off
     }
 }
 
@@ -1097,7 +884,7 @@ void serialData(void){
     if(instruction == INSTRUCTION_BYTES_SLIDER_PAN_TILT_SPEED){
         int count = 0;
         while(Serial.available() < 6){//Wait for 6 bytes to be available. Breaks after ~20ms if bytes are not received.
-                delayMicroseconds(500); 
+                delayMicroseconds(200); 
                 count++;
                 if(count > 100){
                     serialFlush();//Clear the serial buffer
@@ -1116,7 +903,7 @@ void serialData(void){
             stepper_tilt.runSpeed();
     }
     
-    delay(20); //wait to make sure all data in the serial message has arived
+    delay(2); //wait to make sure all data in the serial message has arived
     ledBatteryLevel(getBatteryPercentage()); 
     memset(&stringText[0], 0, sizeof(stringText)); //clear the array
     while(Serial.available()){//set elemetns of stringText to the serial values sent
@@ -1142,9 +929,8 @@ void serialData(void){
         }
         break;
         case INSTRUCTION_ANGLE_BETWEEN_PICTURES:{
-            //degrees_per_picture = serialCommandValueFloat;
-            dcmotor1speed(serialCommandValueFloat);
-            printi(F("dc motor 1 speed: "), serialCommandValueFloat, 3, F("º\n"));
+            degrees_per_picture = serialCommandValueFloat;
+            printi(F("Degrees per picture: "), degrees_per_picture, 3, F("º\n"));
         }
         break;     
         case INSTRUCTION_PANORAMICLAPSE:{
@@ -1335,7 +1121,6 @@ void mainLoop(void){
     while(1){
         if(Serial.available()) serialData();
         multi_stepper.run();
-        updateMotor();
     }
 }
 
