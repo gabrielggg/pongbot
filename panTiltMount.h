@@ -3,11 +3,11 @@
 
 /*------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-#define BAUD_RATE 9600
+#define BAUD_RATE 57600
 
 #define PIN_LED_DATA A0
 #define PIN_SHUTTER_TRIGGER A1
-#define PIN_PAN_HALL A3 
+#define PIN_PAN_HALL A3
 #define PIN_TILT_HALL A4
 #define PIN_INPUT_VOLTAGE A5
 #define PIN_ENABLE 12
@@ -94,21 +94,14 @@
 #define EEPROM_ADDRESS_SLIDER_ACCELERATION 74
 #define EEPROM_ADDRESS_INVERT_SLIDER 78
 
-//#define LED_TYPE WS2812B
+#define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 #define NUM_LEDS 1
 #define BRIGHTNESS 255
 
-
-
-
-
 #define VERSION_NUMBER "3.2.8"
 
 /*------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-
-
 
 struct KeyframeElement {
     long panStepCount = 0;
@@ -183,10 +176,6 @@ void timelapse(unsigned int, unsigned long);
 bool calculateTargetCoordinate(void);
 void interpolateTargetPoint(FloatCoordinate);
 bool sliderHoming(void);
-void motorSetup(void);
-void setMotorSpeed(int);
-void updateMotor(void);
-void stopMotor(void);
 
 /*------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
