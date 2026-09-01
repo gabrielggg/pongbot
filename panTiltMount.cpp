@@ -16,11 +16,11 @@ KeyframeElement keyframe_array[KEYFRAME_ARRAY_LENGTH];
 int keyframe_elements = 0;
 int current_keyframe_index = -1;
 char stringText[MAX_STRING_LENGTH + 1];
-float pan_steps_per_degree = (200.0 * SIXTEENTH_STEP * PAN_GEAR_RATIO) / 360.0; //Stepper motor has 200 steps per 360 degrees
-float tilt_steps_per_degree = (200.0 * SIXTEENTH_STEP * TILT_GEAR_RATIO) / 360.0; //Stepper motor has 200 steps per 360 degrees
-float slider_steps_per_millimetre = (200.0 * SIXTEENTH_STEP) / (20 * 2); //Stepper motor has 200 steps per 360 degrees, the timing pully has 20 teeth and the belt has a pitch of 2mm
+float pan_steps_per_degree = (200.0 * EIGHTH_STEP * PAN_GEAR_RATIO) / 360.0; //Stepper motor has 200 steps per 360 degrees
+float tilt_steps_per_degree = (200.0 * EIGHTH_STEP * TILT_GEAR_RATIO) / 360.0; //Stepper motor has 200 steps per 360 degrees
+float slider_steps_per_millimetre = (200.0 * EIGHTH_STEP) / (20 * 2); //Stepper motor has 200 steps per 360 degrees, the timing pully has 20 teeth and the belt has a pitch of 2mm
 
-int step_mode = SIXTEENTH_STEP;
+int step_mode = EIGHTH_STEP;
 bool enable_state = true;
 float hall_pan_offset_degrees = 0;
 float hall_tilt_offset_degrees = 0;
@@ -28,9 +28,9 @@ byte invert_pan = 0;
 byte invert_tilt = 0;
 byte invert_slider = 0;
 byte enable_homing = 0;
-float pan_max_speed = 15; //degrees/second
-float tilt_max_speed = 45; //degrees/second
-float slider_max_speed = 15; //mm/second
+float pan_max_speed = 20; //degrees/second
+float tilt_max_speed = 20; //degrees/second
+float slider_max_speed = 40; //mm/second
 long target_position[3];
 float degrees_per_picture = 0.5;
 unsigned long delay_ms_between_pictures = 1000;
@@ -72,6 +72,9 @@ void initPanTilt(void){
     multi_stepper.addStepper(stepper_tilt);
     multi_stepper.addStepper(stepper_slider);
     digitalWrite(PIN_ENABLE, LOW); //Enable the stepper drivers
+    stepper_pan.setAcceleration(panDegreesToSteps(100.0));
+    stepper_tilt.setAcceleration(tiltDegreesToSteps(100.0));
+    stepper_slider.setAcceleration(sliderMillimetresToSteps(50.0));
     enable_state = true;
     //printi(F("Setup complete.\n"));
     if(enable_homing == 1){
@@ -126,7 +129,7 @@ void enableSteppers(void){
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void setStepMode(int newMode){
-    float stepRatio = newMode / step_mode; //Ratio between the new step mode and the previously set one. 
+    float stepRatio = (float)newMode / (float)step_mode; //Ratio between the new step mode and the previously set one. 
     if(newMode == FULL_STEP){
         digitalWrite(PIN_MS1, LOW);
         digitalWrite(PIN_MS2, LOW);
@@ -168,6 +171,9 @@ void setStepMode(int newMode){
     stepper_pan.setMaxSpeed(panDegreesToSteps(pan_max_speed));
     stepper_tilt.setMaxSpeed(tiltDegreesToSteps(tilt_max_speed));
     stepper_slider.setMaxSpeed(sliderMillimetresToSteps(slider_max_speed));
+    stepper_pan.setAcceleration(panDegreesToSteps(100.0));
+    stepper_tilt.setAcceleration(tiltDegreesToSteps(100.0));
+    stepper_slider.setAcceleration(sliderMillimetresToSteps(50.0));
     step_mode = newMode;
     printi(F("Set to "), step_mode, F(" step mode.\n"));
 }
@@ -177,14 +183,16 @@ void setStepMode(int newMode){
 
 
 void panJogDegrees(float jogAngle){
-    target_position[0] = panDegreesToSteps(jogAngle);
-    multi_stepper.moveTo(target_position);
+    //target_position[0] = panDegreesToSteps(jogAngle);
+    //multi_stepper.moveTo(target_position);
+    stepper_pan.moveTo(panDegreesToSteps(jogAngle));
 }
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void tiltJogDegrees(float jogAngle){
-    target_position[1] = tiltDegreesToSteps(jogAngle);
-    multi_stepper.moveTo(target_position);
+    //target_position[1] = tiltDegreesToSteps(jogAngle);
+    //multi_stepper.moveTo(target_position);
+    stepper_tilt.moveTo(tiltDegreesToSteps(jogAngle));
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -222,12 +230,13 @@ void sliderMoveTo(float mm){
     printi(F("SLIDER COMMAND = "));
     printi(mm, 3, F(" mm\n"));
 
-    target_position[2] = sliderMillimetresToSteps(mm);
+    //target_position[2] = sliderMillimetresToSteps(mm);
 
-    printi(F("TARGET STEPS = "));
-    printi(target_position[2], F("\n"));
+    //printi(F("TARGET STEPS = "));
+    //printi(target_position[2], F("\n"));
 
-    multi_stepper.moveTo(target_position);
+    //multi_stepper.moveTo(target_position);
+    stepper_slider.moveTo(sliderMillimetresToSteps(mm));
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -1132,7 +1141,10 @@ void serialData(void){
 void mainLoop(void){
     while(1){
         if(Serial.available()) serialData();
-        multi_stepper.run();
+        //multi_stepper.run();
+        stepper_pan.run();
+        stepper_tilt.run();
+        stepper_slider.run();
     }
 }
 
