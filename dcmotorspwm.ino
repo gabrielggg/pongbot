@@ -14,9 +14,9 @@ Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
 
 // Speed levels
 int speeds[] = {
-  1000,   // ~25%
-  2000,   // ~50%
   3000,   // ~75%
+  3350,   // ~83%
+  3700,   // ~91%
   4095    // 100%
 };
 
