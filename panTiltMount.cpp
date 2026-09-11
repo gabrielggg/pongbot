@@ -3,6 +3,72 @@
 #include <AccelStepper.h> //Library to control the stepper motors http://www.airspayce.com/mikem/arduino/AccelStepper/index.html
 #include <MultiStepper.h> //Library to control multiple coordinated stepper motors http://www.airspayce.com/mikem/arduino/AccelStepper/classMultiStepper.html#details
 #include <EEPROM.h> //To be able to save values when powered off
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+
+Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
+
+// PCA9685 channels
+#define M1_IN1  0
+#define M1_IN2  1
+
+#define M2_IN1  2
+#define M2_IN2  3
+
+#define PWM_MAX 4095
+
+// Motor 1 stays at 100%
+#define MOTOR1_SPEED 4095
+
+// Motor 2 speed levels
+int motor2Speeds[] = {
+  3072,  // 75%
+  2048,  // 50%
+  1024   // 25%
+};
+
+const int NUM_SPEEDS = sizeof(motor2Speeds) / sizeof(motor2Speeds[0]);
+
+// How long each speed runs
+const int RUN_TIME = 5000;
+
+
+// --------------------------------------------------
+// Set motor speed
+// Positive = forward
+// Zero = stop
+// --------------------------------------------------
+void setMotor(int in1, int in2, int speed)
+{
+  speed = constrain(speed, 0, PWM_MAX);
+
+  if (speed > 0)
+  {
+    // Inverted rotation direction
+    pca.setPWM(in1, 0, 0);
+    pca.setPWM(in2, 0, speed);
+  }
+  else
+  {
+    // Stop / coast
+    pca.setPWM(in1, 0, 0);
+    pca.setPWM(in2, 0, 0);
+  }
+}
+
+
+
+// --------------------------------------------------
+// Set both motors
+// --------------------------------------------------
+void setMotors(int motor1Speed, int motor2Speed)
+{
+  setMotor(M1_IN1, M1_IN2, motor1Speed);
+  setMotor(M2_IN1, M2_IN2, motor2Speed);
+}
+
+
+
 
 
 AccelStepper stepper_pan = AccelStepper(1, PIN_STEP_PAN, PIN_DIRECTION_PAN);
@@ -76,19 +142,28 @@ void initPanTilt(void){
     stepper_tilt.setAcceleration(tiltDegreesToSteps(100.0));
     stepper_slider.setAcceleration(sliderMillimetresToSteps(50.0));
     enable_state = true;
+    Wire.begin();
+
+    pca.begin();
+
+        // 1 kHz PWM
+    pca.setPWMFreq(1000);
+
+        // Start stopped
+    setMotors(0, 0);
     //printi(F("Setup complete.\n"));
     if(enable_homing == 1){
         printi(F("Beginning homing...\n"));
-        if(findHome()){
-            printi(F("Homing complete.\n"));
-        }
-        else{
-            stepper_pan.setCurrentPosition(0);
-            stepper_tilt.setCurrentPosition(0);
-            printi(F("Error finding home position. Current position has been set as home.\n"));
-        }
+        //if(findHome()){
+        //    printi(F("Homing complete.\n"));
+        //}
+        //else{
+        //    stepper_pan.setCurrentPosition(0);
+        //    stepper_tilt.setCurrentPosition(0);
+        //    printi(F("Error finding home position. Current position has been set as home.\n"));
+       // }
     }
-    ledBatteryLevel(getBatteryPercentage()); 
+    //ledBatteryLevel(getBatteryPercentage()); 
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -263,36 +338,18 @@ void debugReport(void){
     printi(F("---Status---\n"));
     printi(F("Enable state: "), enable_state);
     printi(F("Step Mode: "), step_mode);
-//    printi(F("Pan Hall sensor state: "), digitalRead(PIN_PAN_HALL));
-//    printi(F("Tilt Hall sensor state: "), digitalRead(PIN_TILT_HALL));
-//    printi(F("Pan step count: "), stepper_pan.currentPosition());
-//    printi("Tilt step count: ", stepper_tilt.currentPosition());
-//    printi("Slider step count: ", stepper_slider.currentPosition());
+
     printi(F("Pan angle: "), panStepsToDegrees(stepper_pan.currentPosition()), 3, F("º\n"));
     printi(F("Tilt angle: "), tiltStepsToDegrees(stepper_tilt.currentPosition()), 3, F("º\n")); 
     printi(F("Slider position: "), sliderStepsToMillimetres(stepper_slider.currentPosition()), 3, F("mm\n")); 
-//    printi(F("Pan steps per º: "), pan_steps_per_degree);
-//    printi(F("Tilt steps per º: "), tilt_steps_per_degree);
-//    printi(F("Slider steps per mm: "), slider_steps_per_millimetre);
-//    printi(F("Pan current steps/s: "), stepper_pan.speed());
-//    printi(F("Tilt current steps/s: "), stepper_tilt.speed());
-//    printi(F("Slider current steps/s: "), stepper_slider.speed());
-//    printi(F("Pan current º/s: "), panStepsToDegrees(stepper_pan.speed()));
-//    printi(F("Tilt current º/s: "), tiltStepsToDegrees(stepper_tilt.speed()));
-//    printi(F("Slider current mm/s: "), sliderStepsToMillimetres(stepper_slider.speed()));  
+
     printi(F("Pan max steps/s: "), stepper_pan.maxSpeed());
     printi(F("Tilt max steps/s: "), stepper_tilt.maxSpeed());
     printi(F("Slider max steps/s: "), stepper_slider.maxSpeed());
     printi(F("Pan max speed: "), panStepsToDegrees(stepper_pan.maxSpeed()), 3, F("º/s\n"));
     printi(F("Tilt max speed: "), tiltStepsToDegrees(stepper_tilt.maxSpeed()), 3, F("º/s\n"));
     printi(F("Slider max speed: "), sliderStepsToMillimetres(stepper_slider.maxSpeed()), 3, F("mm/s\n"));        
-//    printi(F("Pan invert direction: "), invert_pan);
-//    printi(F("Tilt invert direction: "), invert_tilt);
-//    printi(F("Slider invert direction: "), invert_slider);
-//    printi(F("Pan Hall offset: "), hall_pan_offset_degrees, 3, F("º\n"));
-//    printi(F("Tilt Hall offset: "), hall_tilt_offset_degrees, 3, F("º\n"));  
-//    printi(F("Battery voltage: "), getBatteryVoltage(), 3, F("V\n"));
-    printi(F("Battery percentage: "), getBatteryPercentage(), 3, F("%\n"));
+
     printi(F("Homing on start-up: "), enable_homing);    
     printi(F("Angle between pictures: "), degrees_per_picture, 3, F("º\n"));
     printi(F("Panoramiclapse delay between pictures: "), delay_ms_between_pictures, F("ms\n"));   
@@ -323,95 +380,7 @@ int setTargetPositions(float panDeg, float tiltDeg, float sliderMillimetre){
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-bool findHome(void){
-    bool panHomeFlag = false;
-    bool tiltHomeFlag = false;
-    int panHomingDir = -1;
-    int tiltHomingDir = -1; 
-    
-    setTargetPositions(0, 0);
-    stepper_pan.setCurrentPosition(0);//set step count to 0
-    stepper_tilt.setCurrentPosition(0);//set step count to 0
 
-    while(digitalRead(PIN_PAN_HALL) == 0 || digitalRead(PIN_TILT_HALL) == 0){//If already on a Hall sensor move off
-        target_position[0] = target_position[0] + panDegreesToSteps(!digitalRead(PIN_PAN_HALL));//increment by 1 degree
-        target_position[1] = target_position[1] + tiltDegreesToSteps(!digitalRead(PIN_TILT_HALL));//increment by 1 degree
-        if(target_position[0] > panDegreesToSteps(360) && target_position[1] > tiltDegreesToSteps(360)){//If both axis have done more than a full rotation there must be an issue...
-            return false;
-        }
-        multi_stepper.moveTo(target_position); 
-        multi_stepper.runSpeedToPosition();
-    }
-    stepper_pan.setCurrentPosition(0);//set step count to 0
-    stepper_tilt.setCurrentPosition(0);//set step count to 0
-
-    setTargetPositions(-45, -45);
-    while(multi_stepper.run()){
-        if(digitalRead(PIN_PAN_HALL) == 0){
-            stepper_pan.setCurrentPosition(0);//set step count to 0
-            setTargetPositions(0, -45 * !tiltHomeFlag);
-            panHomeFlag = true;
-            panHomingDir = 1;
-        }
-        if(digitalRead(PIN_TILT_HALL) == 0){
-            stepper_tilt.setCurrentPosition(0);
-            setTargetPositions(-45 * !panHomeFlag, 0);
-            tiltHomeFlag = true;
-            tiltHomingDir = 1;
-        }
-    }     
-
-    setTargetPositions(45 * !panHomeFlag, 45 * !tiltHomeFlag);//set angle to 0 for an axis if it's home
-    while(multi_stepper.run()){
-        if(digitalRead(PIN_PAN_HALL) == 0){
-            stepper_pan.setCurrentPosition(0);//set step count to 0
-            setTargetPositions(0, 45);
-            panHomeFlag = true;
-        }
-        if(digitalRead(PIN_TILT_HALL) == 0){
-            stepper_tilt.setCurrentPosition(0);
-            setTargetPositions(45 * !panHomeFlag, 0);
-            tiltHomeFlag = true;
-        }
-    } 
-    
-    setTargetPositions(360 * !panHomeFlag, 360 * !tiltHomeFlag);//full rotation on both axis so it must pass the home position
-    while(multi_stepper.run()){
-        if(digitalRead(PIN_PAN_HALL) == 0){
-            stepper_pan.setCurrentPosition(0);//set step count to 0
-            setTargetPositions(0, 360 * !tiltHomeFlag);
-            panHomeFlag = true;
-        }
-        if(digitalRead(PIN_TILT_HALL)  == 0){
-            stepper_tilt.setCurrentPosition(0);
-            setTargetPositions(360 * !panHomeFlag, 0);
-            tiltHomeFlag = true;
-        }
-    } 
-    if(panHomeFlag && tiltHomeFlag){
-        setTargetPositions(hall_pan_offset_degrees * panHomingDir, hall_tilt_offset_degrees * tiltHomingDir);
-        multi_stepper.runSpeedToPosition();
-        stepper_pan.setCurrentPosition(0);//set step count to 0
-        stepper_tilt.setCurrentPosition(0);//set step count to 0
-        setTargetPositions(0, 0);
-        return true;
-    }
-    else{
-        return false;
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-float getBatteryVoltage(void){ //TODO: Calibrate the values for your battery
-    return mapNumber(analogRead(PIN_INPUT_VOLTAGE), 0, 1007, 0, 12.6);//1007 = 12.6V
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-float getBatteryPercentage(void){ //TODO: Calibrate the values for your battery
-    return boundFloat(mapNumber(getBatteryVoltage(), 9, 12.6, 0, 100), 0, 100); //780 = 9V = 0%, 1023 = 12.6V = 100%
-}
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -439,154 +408,6 @@ float tiltStepsToDegrees(float steps){
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-int addPosition(void){
-    if(keyframe_elements >= 0 && keyframe_elements < KEYFRAME_ARRAY_LENGTH){
-        keyframe_array[keyframe_elements].panStepCount = stepper_pan.currentPosition();
-        keyframe_array[keyframe_elements].tiltStepCount = stepper_tilt.currentPosition();    
-        keyframe_array[keyframe_elements].sliderStepCount = stepper_slider.currentPosition();    
-        keyframe_array[keyframe_elements].panSpeed = stepper_pan.maxSpeed();
-        keyframe_array[keyframe_elements].tiltSpeed = stepper_tilt.maxSpeed();    
-        keyframe_array[keyframe_elements].sliderSpeed = stepper_slider.maxSpeed();            
-        current_keyframe_index = keyframe_elements;
-        keyframe_elements++;//increment the index
-        printi(F("Position added at index: "), current_keyframe_index);
-        return 0;
-    }
-    else{
-        printi(F("Max number of position reached\n"));
-    }
-    return -1;
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void clearKeyframes(void){
-    for(int row = 0; row < KEYFRAME_ARRAY_LENGTH; row++){
-        keyframe_array[row].panStepCount = 0;
-        keyframe_array[row].tiltStepCount = 0;
-        keyframe_array[row].sliderStepCount = 0;
-        keyframe_array[row].panSpeed = 0;
-        keyframe_array[row].tiltSpeed = 0;
-        keyframe_array[row].sliderSpeed = 0;
-        keyframe_array[row].msDelay = 0;
-    }
-    keyframe_elements = 0;
-    current_keyframe_index = -1;
-    printi(F("Keyframes cleared.\n"));
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void moveToIndex(int index){
-    if(index < keyframe_elements && index >= 0){
-        target_position[0] = keyframe_array[index].panStepCount;
-        target_position[1] = keyframe_array[index].tiltStepCount;
-        target_position[2] = keyframe_array[index].sliderStepCount;
-        stepper_pan.setMaxSpeed(keyframe_array[index].panSpeed);
-        stepper_tilt.setMaxSpeed(keyframe_array[index].tiltSpeed);
-        stepper_slider.setMaxSpeed(keyframe_array[index].sliderSpeed);
-        multi_stepper.moveTo(target_position); //Sets new target positions
-        multi_stepper.runSpeedToPosition(); //Moves and blocks until complete
-        delay(keyframe_array[index].msDelay);
-        current_keyframe_index = index;
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void executeMoves(int repeat){
-    for(int i = 0; i < repeat; i++){
-        for(int row = 0; row < keyframe_elements; row++){
-            moveToIndex(row);
-        }
-        ledBatteryLevel(getBatteryPercentage()); 
-        if(getBatteryVoltage() < 9.5){//9.5V is used as the cut off to allow for inaccuracies and be on the safe side.
-            delay(200);
-            if(getBatteryVoltage() < 9.5){//Check voltage is still low and the first wasn't a miscellaneous reading
-                printi(F("Battery low! Turn the power off."));
-                while(1){}//loop and do nothing
-            }
-        }
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void gotoFirstKeyframe(void){
-    moveToIndex(0);
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void gotoLastKeyframe(void){
-    moveToIndex(keyframe_elements - 1);
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void editKeyframe(void){
-    keyframe_array[current_keyframe_index].panStepCount = stepper_pan.currentPosition();
-    keyframe_array[current_keyframe_index].tiltStepCount = stepper_tilt.currentPosition(); 
-    keyframe_array[current_keyframe_index].sliderStepCount = stepper_slider.currentPosition(); 
-    keyframe_array[current_keyframe_index].panSpeed = stepper_pan.maxSpeed();
-    keyframe_array[current_keyframe_index].tiltSpeed = stepper_tilt.maxSpeed();
-    keyframe_array[current_keyframe_index].sliderSpeed = stepper_slider.maxSpeed();
-    
-    printi(F("Edited index: "), current_keyframe_index);
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void addDelay(unsigned int ms){
-    keyframe_array[current_keyframe_index].msDelay = ms;
-    printi(ms, F(""));
-    printi(F("ms delay added at index: "), current_keyframe_index);
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-//void scaleMovesArrayPanMaxSpeed(float newMax){
-//    float currentMax = 0;
-//    for(int row = 0; row < moves_array_elements; row++){ //Find the maximum pan speed
-//        if(program_elements[row].panSpeed > currentMax){
-//            currentMax = program_elements[row].panSpeed;
-//        }  
-//    }
-//    float speedRatio = newMax / currentMax;
-//    for(int row = 0; row < moves_array_elements; row++){ //Scale all the pan speeds      
-//        program_elements[row].panSpeed = program_elements[row].panSpeed * speedRatio;
-//    }
-//}
-//
-///*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-//
-//void scaleMovesArrayTiltMaxSpeed(float newMax){
-//    float currentMax = 0;
-//    for(int row = 0; row < moves_array_elements; row++){ //Find the maximum pan speed
-//        if(program_elements[row].tiltSpeed > currentMax){
-//            currentMax = program_elements[row].tiltSpeed;
-//        }  
-//    }
-//    float speedRatio = newMax / currentMax;
-//    for(int row = 0; row < moves_array_elements; row++){ //Scale all the pan speeds      
-//        program_elements[row].tiltSpeed = program_elements[row].tiltSpeed * speedRatio;
-//    }
-//}
-//
-///*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-//
-//void scaleMovesArraySliderMaxSpeed(float newMax){
-//    float currentMax = 0;
-//    for(int row = 0; row < moves_array_elements; row++){ //Find the maximum pan speed
-//        if(program_elements[row].sliderSpeed > currentMax){
-//            currentMax = program_elements[row].sliderSpeed;
-//        }  
-//    }
-//    float speedRatio = newMax / currentMax;
-//    for(int row = 0; row < moves_array_elements; row++){ //Scale all the pan speeds      
-//        program_elements[row].sliderSpeed = program_elements[row].sliderSpeed * speedRatio;
-//    }
-//}
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -692,208 +513,6 @@ void toggleAutoHoming(void){
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-void triggerCameraShutter(void){
-    //
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void ledBatteryLevel(float batteryPercentage){
-    byte hue = mapNumber(batteryPercentage, 0, 100, 0, 96);
-    //LEDS.showColor(CHSV(hue , 255, 255));
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void panoramiclapseInterpolation(float panStartAngle, float tiltStartAngle, float sliderStartPos, float panStopAngle, float tiltStopAngle, float sliderStopPos, float degPerPic, unsigned long msDelay){
-    if(degPerPic == 0) return;
-    if(msDelay > SHUTTER_DELAY){
-        msDelay = msDelay - SHUTTER_DELAY;
-    }
-    float panAngle = panStopAngle - panStartAngle;
-    float tiltAngle = tiltStopAngle - tiltStartAngle;
-    float sliderDistance = sliderStopPos - sliderStartPos;
-    float largestAngle = (abs(panAngle) > abs(tiltAngle)) ? panAngle : tiltAngle;
-    unsigned int numberOfIncrements = abs(largestAngle) / degPerPic;
-    if(numberOfIncrements == 0) return;
-    float panInc = panAngle / numberOfIncrements;
-    float tiltInc = tiltAngle / numberOfIncrements;
-    float sliderInc = sliderDistance / numberOfIncrements;
-    
-    for(int i = 0; i <= numberOfIncrements; i++){
-        setTargetPositions(panStartAngle + (panInc * i), tiltStartAngle + (tiltInc * i), sliderStartPos + (sliderInc * i));
-        multi_stepper.runSpeedToPosition();//blocking move to the next position
-        delay(msDelay);
-        //LEDS.showColor(CHSV(160 , 255, 255)); //blue
-        triggerCameraShutter();//capture the picture
-        //LEDS.showColor(CHSV(160 , 255, 0)); //off
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void panoramiclapse(float degPerPic, unsigned long msDelay, int repeat){   
-    if(keyframe_elements < 2){ 
-        printi(F("Not enough keyframes recorded\n"));
-        return; //check there are posions to move to
-    }
-    for(int i = 0; i < repeat; i++){
-        for(int index = 0; index < keyframe_elements - 1; index++){
-            panoramiclapseInterpolation(panStepsToDegrees(keyframe_array[index].panStepCount), tiltStepsToDegrees(keyframe_array[index].tiltStepCount), sliderStepsToMillimetres(keyframe_array[index].sliderStepCount),
-            panStepsToDegrees(keyframe_array[index + 1].panStepCount), tiltStepsToDegrees(keyframe_array[index + 1].tiltStepCount), sliderStepsToMillimetres(keyframe_array[index + 1].sliderStepCount), degPerPic, msDelay);
-        }
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void timelapse(unsigned int numberOfPictures, unsigned long msDelay){
-    if(msDelay > SHUTTER_DELAY){
-        msDelay = msDelay - SHUTTER_DELAY;
-    }
-   
-    float panAngle = 0;
-    float tiltAngle = 0;
-    float sliderTravel = 0;
-    
-    if(keyframe_elements >= 2){ 
-        panAngle = panStepsToDegrees(keyframe_array[1].panStepCount) - panStepsToDegrees(keyframe_array[0].panStepCount);
-        tiltAngle = tiltStepsToDegrees(keyframe_array[1].tiltStepCount) - tiltStepsToDegrees(keyframe_array[0].tiltStepCount);
-        sliderTravel = sliderStepsToMillimetres(keyframe_array[1].sliderStepCount) - sliderStepsToMillimetres(keyframe_array[0].sliderStepCount);
-    }
-    
-    float sliderInc = sliderTravel / numberOfPictures;
-    float panInc = panAngle / numberOfPictures;
-    float tiltInc = tiltAngle / numberOfPictures;
-    
-    for(int i = 0; i <= numberOfPictures; i++){
-        setTargetPositions(panStepsToDegrees(stepper_pan.currentPosition()) + (panInc * i), tiltStepsToDegrees(stepper_tilt.currentPosition()) + (tiltInc * i), sliderStepsToMillimetres(stepper_slider.currentPosition()) + (sliderInc * i));
-        multi_stepper.runSpeedToPosition();//blocking move to the next position
-        delay(msDelay);
-        //LEDS.showColor(CHSV(160 , 255, 255)); //blue
-        triggerCameraShutter();//capture the picture
-        //LEDS.showColor(CHSV(160 , 255, 0)); //off
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-//From the first two keyframes the intercept of where the camera is directed is calculated.
-//The first kayframe's x pan and tilt positions are used to calculate a 3D vector. The second keyframe's x and pan position are used to calculate a vertical plane. (It wuld be almost impossible for 2 3D vectors to intercept due to floating point precision issues.)
-//The intercept of the vectorand plane are then calculated to give the X, Y, Z coordinates of the point the camera was pointed at in both keyframes. (The second keyframe will ignore the tilt value and calculate it based on the first keyframes vector.)
-bool calculateTargetCoordinate(void){ 
-    float m1, c1, m2, c2;
-    
-    LinePoints line0;
-    line0.x0 = sliderStepsToMillimetres(keyframe_array[0].sliderStepCount);
-    line0.y0 = 0;
-    line0.x1 = line0.x0 + cos(degToRads(panStepsToDegrees(keyframe_array[0].panStepCount)));
-    line0.y1 = sin(degToRads(panStepsToDegrees(keyframe_array[0].panStepCount)));
-    
-    LinePoints line1;
-    line1.x0 = sliderStepsToMillimetres(keyframe_array[1].sliderStepCount);
-    line1.y0 = 0;
-    line1.x1 = line1.x0 + cos(degToRads(panStepsToDegrees(keyframe_array[1].panStepCount)));
-    line1.y1 = sin(degToRads(panStepsToDegrees(keyframe_array[1].panStepCount)));
-    
-    if((line0.x1 - line0.x0) != 0){
-        m1 = (line0.y1 - line0.y0) / (line0.x1 - line0.x0);
-        c1 = line0.y1 - m1 * line0.x1;
-    }
-
-    if((line1.x1 - line1.x0) != 0){
-        m2 = (line1.y1 - line1.y0) / (line1.x1 - line1.x0);
-        c2 = line1.y1 - m2 * line1.x1;
-    }
-
-    if((line0.x1 - line0.x0) == 0){
-        intercept.x = line0.x0;
-        intercept.y = m2 * intercept.x + c2;    
-    }
-    else if((line1.x1 - line1.x0) == 0){
-        intercept.x = line1.x0;
-        intercept.y = m1 * intercept.x + c1;
-    }
-    else{
-        if(m1 == m2){ //If the angle of the slope of both lines are the same they are parallel and cannot intercept.
-            printi(F("Positions do not intersect."));
-            return false;
-        }
-        intercept.x = (c2 - c1) / (m1 - m2);
-        intercept.y = m1 * intercept.x + c1;
-    }
-    intercept.z = tan(degToRads(tiltStepsToDegrees(keyframe_array[0].tiltStepCount))) * sqrt(pow(intercept.x - sliderStepsToMillimetres(keyframe_array[0].sliderStepCount), 2) + pow(intercept.y, 2));
-    if(((panStepsToDegrees(keyframe_array[0].panStepCount) > 0 && panStepsToDegrees(keyframe_array[1].panStepCount) > 0) && intercept.y < 0)
-    || ((panStepsToDegrees(keyframe_array[0].panStepCount) < 0 && panStepsToDegrees(keyframe_array[1].panStepCount) < 0) && intercept.y > 0) || intercept.y == 0){ //Checks that the intercept point is in the direction the camera was pointing and not on the opposite side behind the camera.
-        printi(F("Invalid intercept.\n"));
-        return false;
-    }
-    return true;
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-void interpolateTargetPoint(FloatCoordinate targetPoint, int repeat){ //The first two keyframes are interpolated between while keeping the camera pointing at previously calculated intercept point.
-    if(keyframe_elements < 2){ 
-        printi(F("Not enough keyframes recorded\n"));
-        return; //check there are posions to move to
-    }
-    
-    float sliderStartPos = sliderStepsToMillimetres(keyframe_array[0].sliderStepCount); //slider start position
-    float sliderEndPos = sliderStepsToMillimetres(keyframe_array[1].sliderStepCount);
-    float panAngle = 0;
-    float tiltAngle = 0;
-    float x = targetPoint.x - sliderStepsToMillimetres(keyframe_array[0].sliderStepCount);
-    float ySqared = pow(targetPoint.y, 2);    
-    float sliderTravel = sliderStepsToMillimetres(keyframe_array[1].sliderStepCount) - sliderStepsToMillimetres(keyframe_array[0].sliderStepCount);
-    int numberOfIncrements = abs(sliderTravel);
-    float increment = sliderTravel / numberOfIncrements;//size of interpolation increments in mm
-    
-    for(int j = 0; (j < repeat || (repeat == 0 && j == 0)); j++){
-        for(int i = 0; i <= numberOfIncrements; i++){
-            x = targetPoint.x - (sliderStartPos + increment * i);
-            panAngle = radsToDeg(atan2(targetPoint.y, x));
-            tiltAngle = radsToDeg(atan2(targetPoint.z, sqrt(pow(x, 2) + ySqared)));
-            setTargetPositions(panAngle, tiltAngle, sliderStartPos + increment * i);
-            multi_stepper.runSpeedToPosition();//blocking move to the next position
-        }
-        x = targetPoint.x - sliderEndPos;
-        panAngle = radsToDeg(atan2(targetPoint.y, x));
-        tiltAngle = radsToDeg(atan2(targetPoint.z, sqrt(pow(x, 2) + ySqared)));
-        setTargetPositions(panAngle, tiltAngle, sliderEndPos);
-        multi_stepper.runSpeedToPosition();//blocking move to the next position
-
-        for(int i = numberOfIncrements; (i >= 0 && repeat > 0); i--){
-            x = targetPoint.x - (sliderStartPos + increment * i);
-            panAngle = radsToDeg(atan2(targetPoint.y, x));
-            tiltAngle = radsToDeg(atan2(targetPoint.z, sqrt(pow(x, 2) + ySqared)));
-            setTargetPositions(panAngle, tiltAngle, sliderStartPos + increment * i);
-            multi_stepper.runSpeedToPosition();//blocking move to the next position
-        }
-        if(repeat > 0){
-            setTargetPositions(panAngle, tiltAngle, sliderStartPos);
-            multi_stepper.runSpeedToPosition();//blocking move to the next position 
-        }     
-    }
-}
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-bool sliderHoming(void){
-    while(digitalRead(PIN_SLIDER_HALL) == 0){ //Move off the hall
-        target_position[2] = target_position[2] + sliderMillimetresToSteps(1); 
-        multi_stepper.moveTo(target_position); 
-        multi_stepper.runSpeedToPosition();        
-    }
-    setTargetPositions(panStepsToDegrees(target_position[0]), tiltStepsToDegrees(target_position[1]), -1200);//1200 is the length of the slider
-    while(multi_stepper.run()){
-        if(digitalRead(PIN_SLIDER_HALL) == 0){
-            stepper_slider.setCurrentPosition(0);//set step count to 0
-            setTargetPositions(panStepsToDegrees(target_position[0]), tiltStepsToDegrees(target_position[1]), 0);
-            return true;
-        }
-    }
-    return false;
-}
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -922,7 +541,7 @@ void serialData(void){
     }
     
     delay(20); //wait to make sure all data in the serial message has arived
-    ledBatteryLevel(getBatteryPercentage()); 
+    //ledBatteryLevel(getBatteryPercentage()); 
     memset(&stringText[0], 0, sizeof(stringText)); //clear the array
     while(Serial.available()){//set elemetns of stringText to the serial values sent
         char digit = Serial.read(); //read in a char
@@ -934,7 +553,7 @@ void serialData(void){
     if(instruction == 'G' && stringText[0] == 0) return;//For the bluetooth issue of it sending data when it connects...
     switch(instruction){
         case INSTRUCTION_SLIDER_HOME:{
-            sliderHoming();
+            //sliderHoming();
         }
         break;
         case INSTRUCTION_SLIDER_MILLIMETRES:{
@@ -942,28 +561,32 @@ void serialData(void){
         }
         break;
         case INSTRUCTION_DELAY_BETWEEN_PICTURES:{
-            delay_ms_between_pictures = serialCommandValueFloat;
-            printi(F("Delay between pictures: "), delay_ms_between_pictures, F("ms\n"));
+            //delay_ms_between_pictures = serialCommandValueFloat;
+            setMotor(M2_IN1, M2_IN2, serialCommandValueFloat);
+            //printi(F("Delay between pictures: "), delay_ms_between_pictures, F("ms\n"));
         }
         break;
         case INSTRUCTION_ANGLE_BETWEEN_PICTURES:{
             //degrees_per_picture = serialCommandValueFloat;
             //dcmotor1speed(serialCommandValueFloat);
             //printi(F("dc motor 1 speed: "), serialCommandValueFloat, 3, F("º\n"));
-            degrees_per_picture = serialCommandValueFloat;
-            printi(F("Degrees per picture: "), degrees_per_picture, 3, F("º\n"));
+            //degrees_per_picture = serialCommandValueFloat;
+            setMotor(M1_IN1, M1_IN2, serialCommandValueFloat);
+            //setMotor(M2_IN1, M2_IN2, motor2Speed);
+            //setMotors(MOTOR1_SPEED, motor2Speed);
+            //printi(F("Degrees per picture: "), degrees_per_picture, 3, F("º\n"));
         }
         break;     
         case INSTRUCTION_PANORAMICLAPSE:{
             printi(F("Starting panorama.\n"));
-            panoramiclapse(degrees_per_picture, delay_ms_between_pictures, 1);
+           // panoramiclapse(degrees_per_picture, delay_ms_between_pictures, 1);
             printi(F("Finished\n"));
         }
         break;
         case INSTRUCTION_TIMELAPSE:{
             printi(F("Starting timelapse with "), serialCommandValueInt, F(" pics\n"));
             printi(F(""), delay_ms_between_pictures, F("ms between pics\n"));
-            timelapse(serialCommandValueInt, delay_ms_between_pictures);
+            //timelapse(serialCommandValueInt, delay_ms_between_pictures);
             printi(F("Finished\n"));
         }
         break;
@@ -976,21 +599,21 @@ void serialData(void){
 //        }
 //        break;
         case INSTRUCTION_TRIGGER_SHUTTER:{
-            triggerCameraShutter();
+            //triggerCameraShutter();
         }
         break;
         case INSTRUCTION_AUTO_HOME:{
-            printi(F("Beginning homing.\n"));
-            if(findHome()){
-                printi(F("Homing complete.\n"));
-            }
-            else{
-                stepper_pan.setCurrentPosition(0);
-                stepper_tilt.setCurrentPosition(0);
-                stepper_slider.setCurrentPosition(0);
-                setTargetPositions(0, 0, 0);
-                printi(F("Error homing. Current position has been set as home.\n"));
-            }
+            //printi(F("Beginning homing.\n"));
+            //if(findHome()){
+            //    printi(F("Homing complete.\n"));
+            //}
+            //else{
+            //    stepper_pan.setCurrentPosition(0);
+            //    stepper_tilt.setCurrentPosition(0);
+            //    stepper_slider.setCurrentPosition(0);
+            //    setTargetPositions(0, 0, 0);
+            //    printi(F("Error homing. Current position has been set as home.\n"));
+            //}
         }
         break;
         case INSTRUCTION_TOGGLE_HOMING:{
@@ -1025,43 +648,43 @@ void serialData(void){
         }
         break;
         case INSTRUCTION_ADD_POSITION:{
-            addPosition();
+            //addPosition();
         }
         break;
         case INSTRUCTION_STEP_FORWARD:{
-            moveToIndex(current_keyframe_index + 1);
+            //moveToIndex(current_keyframe_index + 1);
             printi(F("Index: "), current_keyframe_index, F("\n"));
         }
         break;
         case INSTRUCTION_STEP_BACKWARD:{
-            moveToIndex(current_keyframe_index - 1);
+            //moveToIndex(current_keyframe_index - 1);
             printi(F("Index: "), current_keyframe_index, F("\n"));
         }
         break;
         case INSTRUCTION_JUMP_TO_START:{
-            gotoFirstKeyframe();
+            //gotoFirstKeyframe();
             printi(F("Index: "), current_keyframe_index, F("\n"));
         }
         break;
         case INSTRUCTION_JUMP_TO_END:{
-            gotoLastKeyframe();
+            //gotoLastKeyframe();
             printi(F("Index: "), current_keyframe_index, F("\n"));
         }
         break;
         case INSTRUCTION_EDIT_ARRAY:{
-            editKeyframe();
+            //editKeyframe();
         }
         break;
         case INSTRUCTION_ADD_DELAY:{
-            addDelay(serialCommandValueInt);
+            //addDelay(serialCommandValueInt);
         }
         break;
         case INSTRUCTION_CLEAR_ARRAY:{
-            clearKeyframes();
+            //clearKeyframes();
         }
         break;
         case INSTRUCTION_EXECUTE_MOVES:{
-            executeMoves(serialCommandValueInt);
+            //executeMoves(serialCommandValueInt);
         }
         break;      
 //        case INSTRUCTION_PAN_RUN_SPEED:{
@@ -1120,17 +743,17 @@ void serialData(void){
         }
         break;
         case INSTRUCTION_CALCULATE_TARGET_POINT:{            
-            if(calculateTargetCoordinate()){
-                printi("Target coordinates:\tx: ", intercept.x, 3, "\t");
-                printi("y: ", intercept.y, 3, "\t");
-                printi("z: ", intercept.z, 3, "mm\n");
-            }
+            //if(calculateTargetCoordinate()){
+            //    printi("Target coordinates:\tx: ", intercept.x, 3, "\t");
+            //    printi("y: ", intercept.y, 3, "\t");
+            //    printi("z: ", intercept.z, 3, "mm\n");
+            //}
         }
         break;  
         case INSTRUCTION_ORIBIT_POINT:{            
-            if(calculateTargetCoordinate()){
-                interpolateTargetPoint(intercept, serialCommandValueInt);
-            }
+            //if(calculateTargetCoordinate()){
+                //interpolateTargetPoint(intercept, serialCommandValueInt);
+            //}
         }
         break;  
     }
