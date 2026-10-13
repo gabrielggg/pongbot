@@ -111,7 +111,7 @@ byte invert_slider = 0;
 byte enable_homing = 0;
 float pan_max_speed = 20; //degrees/second
 float tilt_max_speed = 20; //degrees/second
-float slider_max_speed = 40; //mm/second
+float slider_max_speed = 100; //mm/second
 long target_position[3];
 float degrees_per_picture = 0.5;
 unsigned long delay_ms_between_pictures = 1000;
@@ -141,6 +141,7 @@ void initPanTilt(void){
     //FastLED.addLeds<LED_TYPE, PIN_LED_DATA, COLOR_ORDER>(leds, NUM_LEDS);
     //FastLED.setBrightness(BRIGHTNESS);
     //LEDS.showColor(CHSV(160, 255, 255)); //Set led to blue
+    saveEEPROM();
     setEEPROMVariables();
     setStepMode(step_mode); //steping mode
     stepper_pan.setMaxSpeed(panDegreesToSteps(pan_max_speed));
