@@ -8,6 +8,8 @@
 
 Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
 
+
+
 // PCA9685 channels
 #define M1_IN1  0
 #define M1_IN2  1
@@ -32,7 +34,9 @@ const int NUM_SPEEDS = sizeof(motor2Speeds) / sizeof(motor2Speeds[0]);
 // How long each speed runs
 const int RUN_TIME = 5000;
 
+bool sliderRunning = false;
 
+float sliderRunSpeed = 20.0; 
 // --------------------------------------------------
 // Set motor speed
 // Positive = forward
@@ -67,6 +71,17 @@ void setMotors(int motor1Speed, int motor2Speed)
   setMotor(M2_IN1, M2_IN2, motor2Speed);
 }
 
+/*
+void setSliderRunning(bool state){
+    sliderRunning = state;    
+    if(state){
+    stepper_slider.setSpeed(sliderMillimetresToSteps(sliderRunSpeed));
+    }
+    else{
+        stepper_slider.setSpeed(0);
+    }
+}
+*/
 
 
 
@@ -557,7 +572,8 @@ void serialData(void){
         }
         break;
         case INSTRUCTION_SLIDER_MILLIMETRES:{
-            sliderMoveTo(serialCommandValueFloat);
+            //sliderMoveTo(serialCommandValueFloat);
+            stepper_slider.setSpeed(sliderMillimetresToSteps(serialCommandValueFloat));
         }
         break;
         case INSTRUCTION_DELAY_BETWEEN_PICTURES:{
@@ -767,7 +783,9 @@ void mainLoop(void){
         //multi_stepper.run();
         stepper_pan.run();
         stepper_tilt.run();
-        stepper_slider.run();
+        stepper_slider.runSpeed();
+        
+            
     }
 }
 
