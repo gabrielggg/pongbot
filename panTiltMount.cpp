@@ -17,6 +17,9 @@ Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
 #define M2_IN1  2
 #define M2_IN2  3
 
+#define M3_IN1  4
+#define M3_IN2  5
+
 #define PWM_MAX 4095
 
 // Motor 1 stays at 100%
@@ -65,10 +68,11 @@ void setMotor(int in1, int in2, int speed)
 // --------------------------------------------------
 // Set both motors
 // --------------------------------------------------
-void setMotors(int motor1Speed, int motor2Speed)
+void setMotors(int motor1Speed, int motor2Speed, int motor3Speed)
 {
   setMotor(M1_IN1, M1_IN2, motor1Speed);
   setMotor(M2_IN1, M2_IN2, motor2Speed);
+  setMotor(M3_IN1, M3_IN2, motor3Speed);
 }
 
 /*
@@ -166,7 +170,7 @@ void initPanTilt(void){
     pca.setPWMFreq(1000);
 
         // Start stopped
-    setMotors(0, 0);
+    setMotors(0, 0, 0);
     //printi(F("Setup complete.\n"));
     if(enable_homing == 1){
         printi(F("Beginning homing...\n"));
@@ -574,7 +578,8 @@ void serialData(void){
         break;
         case INSTRUCTION_SLIDER_MILLIMETRES:{
             //sliderMoveTo(serialCommandValueFloat);
-            stepper_slider.setSpeed(sliderMillimetresToSteps(serialCommandValueFloat));
+            //stepper_slider.setSpeed(sliderMillimetresToSteps(serialCommandValueFloat));
+            setMotor(M3_IN1, M3_IN2, serialCommandValueFloat);
         }
         break;
         case INSTRUCTION_DELAY_BETWEEN_PICTURES:{
