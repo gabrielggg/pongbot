@@ -183,6 +183,8 @@ void timelapse(unsigned int, unsigned long);
 bool calculateTargetCoordinate(void);
 void interpolateTargetPoint(FloatCoordinate);
 bool sliderHoming(void);
+void panMoveSteps(long);
+void tiltMoveSteps(long);
 
 /*------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
