@@ -290,6 +290,23 @@ void tiltJogDegrees(float jogAngle){
     stepper_tilt.moveTo(tiltDegreesToSteps(jogAngle));
 }
 
+void panMoveSteps(long stepIncrement)
+{
+    long newTarget =
+        stepper_pan.targetPosition() + stepIncrement;
+
+    stepper_pan.moveTo(newTarget);
+}
+
+// Relative Tilt movement.
+void tiltMoveSteps(long stepIncrement)
+{
+    long newTarget =
+        stepper_tilt.targetPosition() - stepIncrement;
+
+    stepper_tilt.moveTo(newTarget);
+}
+
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 float panDegreesToSteps(float angle){
@@ -724,11 +741,13 @@ void serialData(void){
         }
         break;
         case INSTRUCTION_PAN_DEGREES:{
-            panJogDegrees(serialCommandValueFloat);
+            //panJogDegrees(serialCommandValueFloat);
+            panMoveSteps((long)serialCommandValueFloat);
         }
         break;  
         case INSTRUCTION_TILT_DEGREES:{
-            tiltJogDegrees(serialCommandValueFloat);
+            //tiltJogDegrees(serialCommandValueFloat);
+            tiltMoveSteps((long)serialCommandValueFloat);
         }
         break; 
         case INSTRUCTION_SET_HOME:{
