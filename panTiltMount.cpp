@@ -8,6 +8,23 @@
 
 Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
 
+// DC SLIDER MOTOR - BALL INDEXING
+
+const int SLIDER_FIXED_PWM = 1500;
+
+const float SLIDER_WHEEL_DIAMETER_CM = 18.5;
+const float BALL_ADVANCE_CM = 4.0;
+
+// One revolution = 5720 ms at PWM 1500
+const float SLIDER_REVOLUTION_TIME_MS = 5720.0;
+
+unsigned long sliderBallPauseMs = 500;
+
+bool sliderIndexingEnabled = false;
+bool sliderMotorIsRunning = false;
+
+unsigned long sliderPhaseStart = 0;
+unsigned long sliderOnTimeMs = 0;
 
 
 // PCA9685 channels
@@ -61,6 +78,75 @@ void setMotor(int in1, int in2, int speed)
     pca.setPWM(in1, 0, 0);
     pca.setPWM(in2, 0, 0);
   }
+}
+
+// Calculate time required to advance 4 cm
+unsigned long calculateBallMovementTime()
+{
+    float circumference =
+        3.14159265 * SLIDER_WHEEL_DIAMETER_CM;
+
+    float movementTime =
+        SLIDER_REVOLUTION_TIME_MS *
+        (BALL_ADVANCE_CM / circumference);
+
+    return (unsigned long)(movementTime + 0.5);
+}
+
+
+// Start DC slider indexing
+void startSliderIndexing()
+{
+    if (sliderIndexingEnabled) return;
+
+    sliderOnTimeMs = calculateBallMovementTime();
+
+    sliderIndexingEnabled = true;
+    sliderMotorIsRunning = true;
+
+    sliderPhaseStart = millis();
+
+    setMotor(M3_IN1, M3_IN2, SLIDER_FIXED_PWM);
+}
+
+
+// Stop DC slider indexing
+void stopSliderIndexing()
+{
+    setMotor(M3_IN1, M3_IN2, 0);
+
+    sliderIndexingEnabled = false;
+    sliderMotorIsRunning = false;
+}
+
+
+// Update DC slider indexing
+void updateSliderIndexing()
+{
+    if (!sliderIndexingEnabled) return;
+
+    unsigned long currentTime = millis();
+
+    if (sliderMotorIsRunning)
+    {
+        if (currentTime - sliderPhaseStart >= sliderOnTimeMs)
+        {
+            setMotor(M3_IN1, M3_IN2, 0);
+
+            sliderMotorIsRunning = false;
+            sliderPhaseStart = millis();
+        }
+    }
+    else
+    {
+        if (currentTime - sliderPhaseStart >= sliderBallPauseMs)
+        {
+            setMotor(M3_IN1, M3_IN2, SLIDER_FIXED_PWM);
+
+            sliderMotorIsRunning = true;
+            sliderPhaseStart = millis();
+        }
+    }
 }
 
 
@@ -596,7 +682,30 @@ void serialData(void){
         case INSTRUCTION_SLIDER_MILLIMETRES:{
             //sliderMoveTo(serialCommandValueFloat);
             //stepper_slider.setSpeed(sliderMillimetresToSteps(serialCommandValueFloat));
-            setMotor(M3_IN1, M3_IN2, serialCommandValueFloat);
+            //setMotor(M3_IN1, M3_IN2, serialCommandValueFloat);
+            //startSliderIndexing((int)serialCommandValueFloat);
+            
+            if (serialCommandValueInt <= 0)
+            {
+                stopSliderIndexing();
+
+                printi(F("Slider stopped.\n"));
+            }
+            else
+            {
+                sliderBallPauseMs = constrain(
+                    serialCommandValueInt,
+                    0,
+                    30000
+                );
+
+                startSliderIndexing();
+
+                printi(F("Slider pause: "),
+                    sliderBallPauseMs,
+                    F(" ms\n"));
+            }
+
         }
         break;
         case INSTRUCTION_DELAY_BETWEEN_PICTURES:{
@@ -806,6 +915,10 @@ void mainLoop(void){
     while(1){
         if(Serial.available()) serialData();
         //multi_stepper.run();
+
+        // DC slider indexing
+        updateSliderIndexing();
+
         stepper_pan.run();
         stepper_tilt.run();
         stepper_slider.runSpeed();
