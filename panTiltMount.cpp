@@ -6,6 +6,8 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
+extern AccelStepper stepper_pan;
+
 Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver(0x40);
 
 // DC SLIDER MOTOR - BALL INDEXING
@@ -25,6 +27,31 @@ bool sliderMotorIsRunning = false;
 
 unsigned long sliderPhaseStart = 0;
 unsigned long sliderOnTimeMs = 0;
+
+// --------------------------------------------------
+// AUTOMATIC PAN SWEEP
+// --------------------------------------------------
+
+enum PanSweepState
+{
+    PAN_SWEEP_IDLE,
+    PAN_SWEEP_INITIAL_LEFT,
+    PAN_SWEEP_LEFT_TO_CENTER,
+    PAN_SWEEP_WAIT_CENTER_TO_RIGHT,
+    PAN_SWEEP_LEFT_TO_RIGHT,
+    PAN_SWEEP_WAIT_RIGHT,
+    PAN_SWEEP_RIGHT_TO_CENTER,
+    PAN_SWEEP_WAIT_CENTER_TO_LEFT,
+    PAN_SWEEP_RIGHT_TO_LEFT,
+    PAN_SWEEP_WAIT_LEFT
+};
+
+bool panSweepEnabled = false;
+
+PanSweepState panSweepState = PAN_SWEEP_IDLE;
+
+unsigned long panSweepDwellMs = 3000;
+unsigned long panSweepTimer = 0;
 
 
 // PCA9685 channels
@@ -150,6 +177,145 @@ void updateSliderIndexing()
 }
 
 
+// --------------------------------------------------
+// Start automatic pan sweep
+// --------------------------------------------------
+
+void startPanSweep(unsigned long dwellMs)
+{
+    // Update pause without restarting an active sequence
+    panSweepDwellMs = dwellMs;
+
+    if (panSweepEnabled) return;
+
+    panSweepEnabled = true;
+
+    // Assumes the pan starts at center
+    panSweepState = PAN_SWEEP_INITIAL_LEFT;
+
+    // Center -> Left
+    panMoveSteps(-400);
+}
+
+
+// --------------------------------------------------
+// Stop automatic pan sweep
+// --------------------------------------------------
+
+void stopPanSweep()
+{
+    panSweepEnabled = false;
+    panSweepState = PAN_SWEEP_IDLE;
+
+    // Decelerate and stop the pan motor
+    stepper_pan.stop();
+}
+
+
+// --------------------------------------------------
+// Update automatic pan sweep
+// Call continuously from mainLoop()
+// --------------------------------------------------
+
+void updatePanSweep()
+{
+    if (!panSweepEnabled) return;
+
+    // Wait until the current movement finishes
+    if (stepper_pan.distanceToGo() != 0) return;
+
+    unsigned long currentTime = millis();
+
+    switch (panSweepState)
+    {
+        case PAN_SWEEP_INITIAL_LEFT:
+        {
+            // Left -> Center
+            panMoveSteps(400);
+            panSweepState = PAN_SWEEP_LEFT_TO_CENTER;
+        }
+        break;
+
+        case PAN_SWEEP_LEFT_TO_CENTER:
+        {
+            // Arrived at center: wait
+            panSweepTimer = currentTime;
+            panSweepState = PAN_SWEEP_WAIT_CENTER_TO_RIGHT;
+        }
+        break;
+
+        case PAN_SWEEP_WAIT_CENTER_TO_RIGHT:
+        {
+            if (currentTime - panSweepTimer >= panSweepDwellMs)
+            {
+                // Center -> Right
+                panMoveSteps(400);
+                panSweepState = PAN_SWEEP_LEFT_TO_RIGHT;
+            }
+        }
+        break;
+
+        case PAN_SWEEP_LEFT_TO_RIGHT:
+        {
+            // Arrived at right: wait
+            panSweepTimer = currentTime;
+            panSweepState = PAN_SWEEP_WAIT_RIGHT;
+        }
+        break;
+
+        case PAN_SWEEP_WAIT_RIGHT:
+        {
+            if (currentTime - panSweepTimer >= panSweepDwellMs)
+            {
+                // Right -> Center
+                panMoveSteps(-400);
+                panSweepState = PAN_SWEEP_RIGHT_TO_CENTER;
+            }
+        }
+        break;
+
+        case PAN_SWEEP_RIGHT_TO_CENTER:
+        {
+            // Arrived at center: wait
+            panSweepTimer = currentTime;
+            panSweepState = PAN_SWEEP_WAIT_CENTER_TO_LEFT;
+        }
+        break;
+
+        case PAN_SWEEP_WAIT_CENTER_TO_LEFT:
+        {
+            if (currentTime - panSweepTimer >= panSweepDwellMs)
+            {
+                // Center -> Left
+                panMoveSteps(-400);
+                panSweepState = PAN_SWEEP_RIGHT_TO_LEFT;
+            }
+        }
+        break;
+
+        case PAN_SWEEP_RIGHT_TO_LEFT:
+        {
+            // Arrived at left: wait
+            panSweepTimer = currentTime;
+            panSweepState = PAN_SWEEP_WAIT_LEFT;
+        }
+        break;
+
+        case PAN_SWEEP_WAIT_LEFT:
+        {
+            if (currentTime - panSweepTimer >= panSweepDwellMs)
+            {
+                // Left -> Center
+                panMoveSteps(400);
+                panSweepState = PAN_SWEEP_LEFT_TO_CENTER;
+            }
+        }
+        break;
+
+        default:
+            break;
+    }
+}
 
 // --------------------------------------------------
 // Set both motors
@@ -851,7 +1017,60 @@ void serialData(void){
         break;
         case INSTRUCTION_PAN_DEGREES:{
             //panJogDegrees(serialCommandValueFloat);
-            panMoveSteps((long)serialCommandValueFloat);
+            //panMoveSteps((long)serialCommandValueFloat);
+             // Remove trailing newline or carriage return
+            int commandLength = strlen(stringText);
+
+            while (commandLength > 0 &&
+                (stringText[commandLength - 1] == '\r' ||
+                stringText[commandLength - 1] == '\n' ||
+                stringText[commandLength - 1] == ' '))
+            {
+                stringText[--commandLength] = '\0';
+            }
+
+            if (serialCommandValueInt == 0)
+            {
+                // p0 = Stop automatic sweep
+                stopPanSweep();
+
+               
+            }
+            else
+            {
+                // Four numeric digits = automatic sweep command
+                bool isSweepCommand = (commandLength == 4);
+
+                for (int i = 0; i < commandLength; i++)
+                {
+                    if (stringText[i] < '0' || stringText[i] > '9')
+                    {
+                        isSweepCommand = false;
+                        break;
+                    }
+                }
+
+                if (isSweepCommand)
+                {
+                    // p0001, p0002, p0003, p0004, etc.
+                    unsigned long dwellMs =
+                        (unsigned long)serialCommandValueInt * 1000UL;
+
+                    startPanSweep(dwellMs);
+
+                    
+                }
+                else
+                {
+                    // Manual movement: p400, p-400, p100, etc.
+                    panSweepEnabled = false;
+                    panSweepState = PAN_SWEEP_IDLE;
+
+                    panMoveSteps((long)serialCommandValueFloat);
+
+                    
+                }
+            }
         }
         break;  
         case INSTRUCTION_TILT_DEGREES:{
@@ -920,6 +1139,10 @@ void mainLoop(void){
         updateSliderIndexing();
 
         stepper_pan.run();
+
+        // Automatic pan movement
+        updatePanSweep();
+
         stepper_tilt.run();
         stepper_slider.runSpeed();
         
