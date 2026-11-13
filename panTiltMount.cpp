@@ -13,14 +13,8 @@
 enum PanSweepState
 {
     PAN_SWEEP_IDLE,
-    PAN_SWEEP_ARRIVE_LEFT,
-    PAN_SWEEP_WAIT_LEFT,
-    PAN_SWEEP_ARRIVE_CENTER_FROM_LEFT,
-    PAN_SWEEP_WAIT_CENTER_TO_RIGHT,
-    PAN_SWEEP_ARRIVE_RIGHT,
-    PAN_SWEEP_WAIT_RIGHT,
-    PAN_SWEEP_ARRIVE_CENTER_FROM_RIGHT,
-    PAN_SWEEP_WAIT_CENTER_TO_LEFT
+    PAN_SWEEP_ARRIVE_POSITION,
+    PAN_SWEEP_WAIT_POSITION
 };
 
 bool panSweepEnabled = false;
@@ -41,7 +35,7 @@ PanSweepState panSweepPendingArrivalState = PAN_SWEEP_IDLE;
 unsigned long panSweepMoveDelayStart = 0;
 
 // Delay after turret finishes its cycle
-const unsigned long PAN_AFTER_TURRET_DELAY_MS = 150;
+const unsigned long PAN_AFTER_TURRET_DELAY_MS = 250;
 
 
 extern AccelStepper stepper_pan;
@@ -91,7 +85,20 @@ unsigned long panManualMoveDelayStart = 0;
 // AUTOMATIC PAN SWEEP
 // --------------------------------------------------
 
+// --------------------------------------------------
+// PAN POSITION SELECTION
+// Index 0 = Left
+// Index 1 = Center
+// Index 2 = Right
+// --------------------------------------------------
 
+bool panSweepPositionEnabled[3] = {true, true, true};
+
+int panSweepRoute[3] = {0, 1, 2};
+int panSweepRouteCount = 3;
+
+int panSweepRouteIndex = 0;
+int panSweepDirection = 1;
 
 
 
@@ -256,6 +263,23 @@ void queuePanSweepMove(long steps, PanSweepState nextState)
 }
 
 
+void buildPanSweepRoute()
+{
+    panSweepRouteCount = 0;
+
+    // Left
+    if (panSweepPositionEnabled[0])
+        panSweepRoute[panSweepRouteCount++] = 0;
+
+    // Center
+    if (panSweepPositionEnabled[1])
+        panSweepRoute[panSweepRouteCount++] = 1;
+
+    // Right
+    if (panSweepPositionEnabled[2])
+        panSweepRoute[panSweepRouteCount++] = 2;
+}
+
 // --------------------------------------------------
 // Start automatic pan sweep
 // --------------------------------------------------
@@ -266,14 +290,34 @@ void startPanSweep(unsigned long dwellMs)
 
     if (panSweepEnabled) return;
 
+    buildPanSweepRoute();
+
+    if (panSweepRouteCount == 0)
+        return;
+
     panSweepEnabled = true;
 
-    panManualMovePending = false;
+    panSweepRouteIndex = 0;
+    panSweepDirection = 1;
 
     panSweepState = PAN_SWEEP_IDLE;
 
-    // Initial center -> left movement
-    queuePanSweepMove(-400, PAN_SWEEP_ARRIVE_LEFT);
+    // Position mapping:
+    // Left   = -400
+    // Center = 0
+    // Right  = +400
+
+    long targetPosition =
+        ((long)panSweepRoute[0] - 1L) * 400L;
+
+    long movement =
+        targetPosition - stepper_pan.targetPosition();
+
+    // Initial movement uses the existing turret queue
+    queuePanSweepMove(
+        movement,
+        PAN_SWEEP_ARRIVE_POSITION
+    );
 }
 
 
@@ -303,24 +347,25 @@ void updatePanSweep()
 
     unsigned long currentTime = millis();
 
-    // Pan must be stationary before scheduling another movement
+    // Wait until the current pan movement finishes
     if (stepper_pan.distanceToGo() != 0 ||
         stepper_pan.speed() != 0.0) return;
 
+
     // --------------------------------------------------
-    // PENDING PAN MOVEMENT
+    // EXISTING TURRET QUEUE AND WAITING LOGIC
     // --------------------------------------------------
 
     if (panSweepMovePending)
     {
-        // Wait until the COMPLETE turret cycle finishes
+        // Wait for complete turret cycle
         if (sliderCycleInProgress)
         {
             panSweepDelayStarted = false;
             return;
         }
 
-        // Start the additional 150 ms delay
+        // Start additional 150 ms delay
         if (!panSweepDelayStarted)
         {
             panSweepMoveDelayStart = currentTime;
@@ -328,21 +373,20 @@ void updatePanSweep()
             return;
         }
 
-        // Wait 150 ms after turret cycle completion
         if (currentTime - panSweepMoveDelayStart <
             PAN_AFTER_TURRET_DELAY_MS)
         {
             return;
         }
 
-        // Safety check before moving
-        if (sliderCycleInProgress) 
+        // Final safety check
+        if (sliderCycleInProgress)
         {
             panSweepDelayStarted = false;
             return;
         }
 
-        // Execute pending pan movement
+        // Execute queued movement
         long movement = panSweepPendingSteps;
 
         panSweepState = panSweepPendingArrivalState;
@@ -355,8 +399,9 @@ void updatePanSweep()
         return;
     }
 
+
     // --------------------------------------------------
-    // PAN SWEEP STATE MACHINE
+    // GENERALIZED POSITION SEQUENCE
     // --------------------------------------------------
 
     switch (panSweepState)
@@ -368,92 +413,57 @@ void updatePanSweep()
         break;
 
 
-        case PAN_SWEEP_ARRIVE_LEFT:
+        case PAN_SWEEP_ARRIVE_POSITION:
         {
-            // Arrived at left
+            // Start dwell timer after reaching position
             panSweepTimer = currentTime;
-            panSweepState = PAN_SWEEP_WAIT_LEFT;
+
+            panSweepState = PAN_SWEEP_WAIT_POSITION;
         }
         break;
 
 
-        case PAN_SWEEP_WAIT_LEFT:
+        case PAN_SWEEP_WAIT_POSITION:
         {
+            // Wait configured time at current position
             if (currentTime - panSweepTimer >= panSweepDwellMs)
             {
-                // Left -> Center
+                // Only one position enabled
+                if (panSweepRouteCount <= 1)
+                {
+                    panSweepTimer = currentTime;
+                    return;
+                }
+
+                // Reverse direction at right endpoint
+                if (panSweepDirection > 0 &&
+                    panSweepRouteIndex >= panSweepRouteCount - 1)
+                {
+                    panSweepDirection = -1;
+                }
+
+                // Reverse direction at left endpoint
+                else if (panSweepDirection < 0 &&
+                         panSweepRouteIndex <= 0)
+                {
+                    panSweepDirection = 1;
+                }
+
+                // Select next enabled position
+                panSweepRouteIndex += panSweepDirection;
+
+                // Convert selected position into steps
+                long targetPosition =
+                    ((long)panSweepRoute[panSweepRouteIndex] - 1L) * 400L;
+
+                // Calculate relative movement
+                long movement =
+                    targetPosition - stepper_pan.targetPosition();
+
+                // Queue next pan movement
                 queuePanSweepMove(
-                    400,
-                    PAN_SWEEP_ARRIVE_CENTER_FROM_LEFT
-                );
-            }
-        }
-        break;
-
-
-        case PAN_SWEEP_ARRIVE_CENTER_FROM_LEFT:
-        {
-            // Arrived at center
-            panSweepTimer = currentTime;
-            panSweepState = PAN_SWEEP_WAIT_CENTER_TO_RIGHT;
-        }
-        break;
-
-
-        case PAN_SWEEP_WAIT_CENTER_TO_RIGHT:
-        {
-            if (currentTime - panSweepTimer >= panSweepDwellMs)
-            {
-                // Center -> Right
-                queuePanSweepMove(
-                    400,
-                    PAN_SWEEP_ARRIVE_RIGHT
-                );
-            }
-        }
-        break;
-
-
-        case PAN_SWEEP_ARRIVE_RIGHT:
-        {
-            // Arrived at right
-            panSweepTimer = currentTime;
-            panSweepState = PAN_SWEEP_WAIT_RIGHT;
-        }
-        break;
-
-
-        case PAN_SWEEP_WAIT_RIGHT:
-        {
-            if (currentTime - panSweepTimer >= panSweepDwellMs)
-            {
-                // Right -> Center
-                queuePanSweepMove(
-                    -400,
-                    PAN_SWEEP_ARRIVE_CENTER_FROM_RIGHT
-                );
-            }
-        }
-        break;
-
-
-        case PAN_SWEEP_ARRIVE_CENTER_FROM_RIGHT:
-        {
-            // Arrived at center
-            panSweepTimer = currentTime;
-            panSweepState = PAN_SWEEP_WAIT_CENTER_TO_LEFT;
-        }
-        break;
-
-
-        case PAN_SWEEP_WAIT_CENTER_TO_LEFT:
-        {
-            if (currentTime - panSweepTimer >= panSweepDwellMs)
-            {
-                // Center -> Left
-                queuePanSweepMove(
-                    -400,
-                    PAN_SWEEP_ARRIVE_LEFT
+                    movement,
+                    PAN_SWEEP_ARRIVE_POSITION
                 );
             }
         }
@@ -1169,6 +1179,7 @@ void serialData(void){
        
     int commandLength = strlen(stringText);
 
+    // Remove trailing newline, carriage return and spaces
     while (commandLength > 0 &&
           (stringText[commandLength - 1] == '\r' ||
            stringText[commandLength - 1] == '\n' ||
@@ -1177,51 +1188,89 @@ void serialData(void){
         stringText[--commandLength] = '\0';
     }
 
-    if (serialCommandValueInt == 0)
+    // --------------------------------------------------
+    // p0 = STOP AUTOMATIC SWEEP
+    // --------------------------------------------------
+
+    if (commandLength == 1 && stringText[0] == '0')
     {
         stopPanSweep();
 
-        panManualMovePending = false;
-        panManualMoveDelayStarted = false;
-
         printi(F("Pan sweep stopped.\n"));
     }
+
     else
     {
-        bool isSweepCommand = (commandLength == 4);
+        // --------------------------------------------------
+        // CHECK SWEEP COMMAND FORMAT
+        // First 3 characters: 0 or x
+        // Remaining characters: pause in seconds
+        // --------------------------------------------------
 
-        for (int i = 0; i < commandLength; i++)
+        bool isSweepCommand = (commandLength >= 4);
+
+        for (int i = 0; i < 3 && isSweepCommand; i++)
+        {
+            if (stringText[i] != '0' &&
+                stringText[i] != 'x')
+            {
+                isSweepCommand = false;
+            }
+        }
+
+        // Check that pause contains only digits
+        for (int i = 3; i < commandLength && isSweepCommand; i++)
         {
             if (stringText[i] < '0' || stringText[i] > '9')
             {
                 isSweepCommand = false;
-                break;
             }
         }
 
         if (isSweepCommand)
         {
-            unsigned long dwellMs =
-                (unsigned long)serialCommandValueInt * 1000UL;
+            int dwellSeconds = atoi(&stringText[3]);
 
-            startPanSweep(dwellMs);
+            // Check that at least one position is enabled
+            bool hasPosition =
+                (stringText[0] == '0' ||
+                 stringText[1] == '0' ||
+                 stringText[2] == '0');
 
-            printi(F("Pan sweep dwell: "),
-                   serialCommandValueInt,
-                   F(" seconds.\n"));
+            if (dwellSeconds > 0 && hasPosition)
+            {
+                // Configure enabled positions
+                panSweepPositionEnabled[0] = (stringText[0] == '0');
+                panSweepPositionEnabled[1] = (stringText[1] == '0');
+                panSweepPositionEnabled[2] = (stringText[2] == '0');
+
+                unsigned long dwellMs =
+                    (unsigned long)dwellSeconds * 1000UL;
+
+                startPanSweep(dwellMs);
+
+                printi(F("Pan sweep configured. Pause: "),
+                       dwellSeconds,
+                       F(" seconds.\n"));
+            }
+            else
+            {
+                printi(F("Invalid pan sweep command.\n"));
+            }
         }
+
         else
         {
-            // Manual movement: immediate, no turret waiting
+            // --------------------------------------------------
+            // MANUAL MOVEMENT: p400, p-400
+            // No turret synchronization
+            // --------------------------------------------------
 
             panSweepEnabled = false;
             panSweepState = PAN_SWEEP_IDLE;
 
             panSweepMovePending = false;
             panSweepDelayStarted = false;
-
-            panManualMovePending = false;
-            panManualMoveDelayStarted = false;
 
             panMoveSteps((long)serialCommandValueFloat);
 
